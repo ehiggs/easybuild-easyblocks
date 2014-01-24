@@ -29,13 +29,28 @@ i.e. 'ant all' implemented as an easyblock
 
 import easybuild.tools.environment as env
 from easybuild.framework.easyblock import EasyBlock
-from easybuild.tools.filetools import run_cmd_qa
+from easybuild.framework.easyconfig import CUSTOM
+from easybuild.tools.filetools import run_cmd
 
 
 class Ant(EasyBlock):
     """
     Support for building and installing applications with ant install
     """
+    @staticmethod
+    def extra_options(extra_vars=None):
+        """Extra easyconfig parameters specific to ConfigureMake."""
+
+        # using [] as default value is a bad idea, so we handle it this way
+        if extra_vars == None:
+            extra_vars = []
+
+        extra_vars.extend([
+                           ('build_options', [False, "Added build options.", CUSTOM]),
+                          ])
+        return EasyBlock.extra_options(extra_vars)
+
+
     def configure_step(self, cmd_prefix=''):
         """no op"""
         pass
@@ -47,14 +62,8 @@ class Ant(EasyBlock):
     def install_step(self):
         """Custom build procedure for Maven."""
         env.setvar('M2_HOME', self.installdir)
-        cmd = 'ant all'
-        qa = {
-            "[input] Do you want to continue? (yes, [no])": "yes"
-        }
-        no_qa = [
-                r' *[java].*', 
-                r' *[modello].*'
-        ]
-
-        run_cmd_qa(cmd, qa, no_qa=no_qa, log_all=True, simple=True)
+        cmd = 'ant %(build_options)s all' % {
+                'build_options': self.cfg['build_options']
+                }
+        run_cmd(cmd, log_all=True, simple=True, log_output=True)
 
