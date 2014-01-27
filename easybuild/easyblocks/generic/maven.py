@@ -30,7 +30,7 @@ i.e. 'ant all' implemented as an easyblock
 import easybuild.tools.environment as env
 from easybuild.framework.easyblock import EasyBlock
 from easybuild.framework.easyconfig import CUSTOM
-from easybuild.tools.filetools import run_cmd_qa
+from easybuild.tools.filetools import run_cmd
 
 
 class Maven(EasyBlock):
@@ -46,7 +46,7 @@ class Maven(EasyBlock):
             extra_vars = []
 
         extra_vars.extend([
-                           ('mvn_java_version', ['1.7', "Override Java Version.", CUSTOM]),
+                           ('build_options', ['', "Custom build options.", CUSTOM]),
                           ])
         return EasyBlock.extra_options(extra_vars)
 
@@ -55,26 +55,16 @@ class Maven(EasyBlock):
         """no op"""
         pass
 
-    def install_step(self):
-        """no op"""
-        env.setvar('M2_HOME', self.installdir)
-        cmd = 'mvn install -DjavaVersion=%(mvn_java_version) -Dmaven.repo.local=%(localrepo)s' % {
-                'mvn_java_version': self.cfg['mvn_java_version'],
-                'localrepo': self.installdir
-                } 
-
     def build_step(self, java_version=None):
         """Custom build procedure for Maven."""
-        env.setvar('M2_HOME', self.installdir)
-        cmd = 'mvn verify -DjavaVersion=%(mvn_java_version)s -Dmaven.repo.local=%(localrepo)s' % {
-                'mvn_java_version': self.cfg['mvn_java_version'],
+        pass
+
+    def install_step(self):
+        """no op"""
+        cmd = 'mvn %(build_options)s -Dmaven.repo.local=%(localrepo)s install' % {
+                'build_options': self.cfg['build_options'],
                 'localrepo': self.installdir
                 } 
+        run_cmd(cmd, log_all=True, simple=True, log_output=True)
 
-        qa = {
-            "[input] Do you want to continue? (yes, [no])": "yes"
-        }
-        no_qa = [r' *[java].*', r' *[modello].*']
-
-        run_cmd_qa(cmd, qa, no_qa=no_qa, log_all=True, simple=True)
 
