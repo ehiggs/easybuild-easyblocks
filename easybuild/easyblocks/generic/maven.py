@@ -46,7 +46,8 @@ class Maven(EasyBlock):
             extra_vars = []
 
         extra_vars.extend([
-                           ('build_options', ['', "Custom build options.", CUSTOM]),
+                           ('repository', ['repository', 'Repository directory for JARs', CUSTOM]),
+                           ( 'build_options', ['', "Custom build options.", CUSTOM]),
                           ])
         return EasyBlock.extra_options(extra_vars)
 
@@ -63,7 +64,7 @@ class Maven(EasyBlock):
         """no op"""
         cmd = 'mvn %(build_options)s -Dmaven.repo.local=%(localrepo)s install' % {
                 'build_options': self.cfg['build_options'],
-                'localrepo': self.installdir
+                'localrepo': '%s/%s' % (self.installdir, self.cfg["repository"])
                 } 
         run_cmd(cmd, log_all=True, simple=True, log_output=True)
 
