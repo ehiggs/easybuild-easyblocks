@@ -35,6 +35,7 @@ import os
 import shutil
 
 from easybuild.easyblocks.generic.configuremake import ConfigureMake
+from easybuild.tools.build_log import EasyBuildError
 
 
 class EB_Bowtie(ConfigureMake):
@@ -44,9 +45,9 @@ class EB_Bowtie(ConfigureMake):
 
     def configure_step(self):
         """
-        Set compilers in makeopts, there is no configure script.
+        Set compilers in buildopts, there is no configure script.
         """
-        self.cfg.update('makeopts', 'CC="%s" CPP="%s"' % (os.getenv('CC'), os.getenv('CXX')))
+        self.cfg.update('buildopts', 'CC="%s" CPP="%s"' % (os.getenv('CC'), os.getenv('CXX')))
 
     def install_step(self):
         """
@@ -61,7 +62,7 @@ class EB_Bowtie(ConfigureMake):
                 srcfile = os.path.join(srcdir, filename)
                 shutil.copy2(srcfile, destdir)
         except (IOError, OSError), err:
-            self.log.error("Copying %s to installation dir %s failed: %s" % (srcfile, destdir, err))
+            raise EasyBuildError("Copying %s to installation dir %s failed: %s", srcfile, destdir, err)
 
     def sanity_check_step(self):
         """Custom sanity check for Bowtie."""

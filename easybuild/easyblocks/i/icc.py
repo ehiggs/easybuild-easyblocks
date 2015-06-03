@@ -1,5 +1,5 @@
 # #
-# Copyright 2009-2013 Ghent University
+# Copyright 2009-2015 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -37,7 +37,7 @@ import re
 from distutils.version import LooseVersion
 
 from easybuild.easyblocks.generic.intelbase import IntelBase, ACTIVATION_NAME_2012, LICENSE_FILE_NAME_2012
-from easybuild.tools.filetools import run_cmd
+from easybuild.tools.run import run_cmd
 
 
 def get_icc_version():
@@ -90,8 +90,12 @@ class EB_icc(IntelBase):
             else:
                 libprefix = "compiler/lib/intel64/lib"
 
+        binfiles = ["icc", "icpc"]
+        if LooseVersion(self.version) < LooseVersion("2014"):
+            binfiles += ["idb"]
+
         custom_paths = {
-            'files': ["%s/%s" % (binprefix, x) for x in ["icc", "icpc", "idb"]] +
+            'files': ["%s/%s" % (binprefix, x) for x in binfiles] +
                      ["%s%s" % (libprefix, x) for x in ["iomp5.a", "iomp5.so"]],
             'dirs': [],
         }
@@ -154,10 +158,7 @@ class EB_icc(IntelBase):
 
     def make_module_extra(self):
         """Add extra environment variables for icc, for license file and NLS path."""
-
         txt = super(EB_icc, self).make_module_extra()
-
-        txt += "prepend-path\t%s\t\t%s\n" % (self.license_env_var, self.license_file)
-        txt += "prepend-path\t%s\t\t$root/%s\n" % ('NLSPATH', 'idb/intel64/locale/%l_%t/%N')
-
+        txt += self.module_generator.prepend_paths(self.license_env_var, [self.license_file], allow_abs=True)
+        txt += self.module_generator.prepend_paths('NLSPATH', os.path.join('idb', 'intel64', 'locale', '%l_%t', '%N'))
         return txt

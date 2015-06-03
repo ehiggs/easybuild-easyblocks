@@ -1,5 +1,5 @@
 # #
-# Copyright 2009-2013 Ghent University
+# Copyright 2009-2015 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -33,16 +33,28 @@ EasyBuild support for installing the Intel MPI library, implemented as an easybl
 """
 
 import os
+import shutil
 from distutils.version import LooseVersion
 
 from easybuild.easyblocks.generic.intelbase import IntelBase, ACTIVATION_NAME_2012, LICENSE_FILE_NAME_2012
-from easybuild.tools.filetools import run_cmd
-from easybuild.tools.config import install_path
+from easybuild.framework.easyconfig import CUSTOM
+from easybuild.tools.build_log import EasyBuildError
+from easybuild.tools.run import run_cmd
+
 
 class EB_impi(IntelBase):
     """
     Support for installing Intel MPI library
     """
+    @staticmethod
+    def extra_options():
+        extra_vars = {
+            'set_mpi_wrappers_compiler': [False, 'Override default compiler used by MPI wrapper commands', CUSTOM],
+            'set_mpi_wrapper_aliases_gcc': [False, 'Set compiler for mpigcc/mpigxx via aliases', CUSTOM],
+            'set_mpi_wrapper_aliases_intel': [False, 'Set compiler for mpiicc/mpiicpc/mpiifort via aliases', CUSTOM],
+            'set_mpi_wrappers_all': [False, 'Set (default) compiler for all MPI wrapper commands', CUSTOM],
+        }
+        return IntelBase.extra_options(extra_vars)
 
     def install_step(self):
         """
@@ -50,25 +62,24 @@ class EB_impi(IntelBase):
         - create silent cfg file
         - execute command
         """
-        if LooseVersion(self.version) >= LooseVersion('4.0.1'):
+        impiver = LooseVersion(self.version)
+        if impiver >= LooseVersion('4.0.1'):
             # impi starting from version 4.0.1.x uses standard installation procedure.
 
             silent_cfg_names_map = {}
 
-            if LooseVersion(self.version) < LooseVersion('4.1.1'):
+            if impiver < LooseVersion('4.1.1'):
                 # since impi v4.1.1, silent.cfg has been slightly changed to be 'more standard'
                 silent_cfg_names_map.update({
                     'activation_name': ACTIVATION_NAME_2012,
                     'license_file_name': LICENSE_FILE_NAME_2012,
                 })
 
-            if LooseVersion(self.version) == LooseVersion('4.1.1.036'):
-                # impi v4.1.1 installer creates impi/<version> subdir itself, so specify parent install dir
-                silent_cfg_names_map.update({
-                    'install_dir': install_path(),
-                })
-
             super(EB_impi, self).install_step(silent_cfg_names_map=silent_cfg_names_map)
+
+            # impi v4.1.1 and v5.0.1 installers create impi/<version> subdir, so stuff needs to be moved afterwards
+            if impiver == LooseVersion('4.1.1.036') or impiver >= LooseVersion('5.0.1.035'):
+                super(EB_impi, self).move_after_install()
         else:
             # impi up until version 4.0.0.x uses custom installation procedure.
             silent = \
@@ -92,7 +103,7 @@ PROCEED_WITHOUT_PYTHON=yes
 AUTOMOUNTED_CLUSTER=yes
 EULA=accept
 
-""" % {'lic':self.license_file, 'ins':self.installdir}
+""" % {'lic': self.license_file, 'ins': self.installdir}
 
             # already in correct directory
             silentcfg = os.path.join(os.getcwd(), "silent.cfg")
@@ -101,14 +112,14 @@ EULA=accept
                 f.write(silent)
                 f.close()
             except:
-                self.log.exception("Writing silent cfg file %s failed." % silent)
+                raise EasyBuildError("Writing silent cfg file %s failed.", silent)
             self.log.debug("Contents of %s: %s" % (silentcfg, silent))
 
             tmpdir = os.path.join(os.getcwd(), self.version, 'mytmpdir')
             try:
                 os.makedirs(tmpdir)
             except:
-                self.log.exception("Directory %s can't be created" % (tmpdir))
+                raise EasyBuildError("Directory %s can't be created", tmpdir)
 
             cmd = "./install.sh --tmp-dir=%s --silent=%s" % (tmpdir, silentcfg)
             run_cmd(cmd, log_all=True, simple=True)
@@ -125,7 +136,7 @@ EULA=accept
             mpi_mods.extend(["mpi_base.mod", "mpi_constants.mod", "mpi_sizeofs.mod"])
 
         custom_paths = {
-            'files': ["bin/mpi%s" % x for x in ["icc", "icpc", "ifort"]] +
+            'files': ["bin%s/mpi%s" % (suff, x) for x in ["icc", "icpc", "ifort"]] +
                      ["include%s/mpi%s.h" % (suff, x) for x in ["cxx", "f", "", "o", "of"]] +
                      ["include%s/%s" % (suff, x) for x in ["i_malloc.h"] + mpi_mods] +
                      ["lib%s/libmpi.so" % suff, "lib%s/libmpi.a" % suff],
@@ -160,7 +171,33 @@ EULA=accept
     def make_module_extra(self):
         """Overwritten from Application to add extra txt"""
         txt = super(EB_impi, self).make_module_extra()
-        txt += "prepend-path\t%s\t\t%s\n" % (self.license_env_var, self.license_file)
-        txt += "setenv\t%s\t\t$root\n" % ('I_MPI_ROOT')
+        txt += self.module_generator.prepend_paths(self.license_env_var, [self.license_file], allow_abs=True)
+        txt += self.module_generator.set_environment('I_MPI_ROOT', self.installdir)
+        if self.cfg['set_mpi_wrappers_compiler'] or self.cfg['set_mpi_wrappers_all']:
+            for var in ['CC', 'CXX', 'F77', 'F90', 'FC']:
+                if var == 'FC':
+                    # $FC isn't defined by EasyBuild framework, so use $F90 instead
+                    src_var = 'F90'
+                else:
+                    src_var = var
+
+                target_var = 'I_MPI_%s' % var
+
+                val = os.getenv(src_var)
+                if val:
+                    txt += self.module_generator.set_environment(target_var, val)
+                else:
+                    raise EasyBuildError("Environment variable $%s not set, can't define $%s", src_var, target_var)
+
+        if self.cfg['set_mpi_wrapper_aliases_gcc'] or self.cfg['set_mpi_wrappers_all']:
+            # force mpigcc/mpigxx to use GCC compilers, as would be expected based on their name
+            txt += self.module_generator.set_alias('mpigcc', 'mpigcc -cc=gcc')
+            txt += self.module_generator.set_alias('mpigxx', 'mpigxx -cc=g++')
+
+        if self.cfg['set_mpi_wrapper_aliases_intel'] or self.cfg['set_mpi_wrappers_all']:
+            # do the same for mpiicc/mpiipc/mpiifort to be consistent, even if they may not exist
+            txt += self.module_generator.set_alias('mpiicc', 'mpiicc -cc=icc')
+            txt += self.module_generator.set_alias('mpiicpc', 'mpiicpc -cc=icpc')
+            txt += self.module_generator.set_alias('mpiifort', 'mpiifort -cc=ifort')
 
         return txt

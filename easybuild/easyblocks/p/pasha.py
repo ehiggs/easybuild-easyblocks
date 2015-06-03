@@ -1,5 +1,5 @@
 ##
-# Copyright 2009-2013 Ghent University
+# Copyright 2009-2015 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -32,6 +32,7 @@ import shutil
 import os
 
 from easybuild.easyblocks.generic.configuremake import ConfigureMake
+from easybuild.tools.build_log import EasyBuildError
 from easybuild.tools.modules import get_software_root
 
 
@@ -43,11 +44,11 @@ class EB_Pasha(ConfigureMake):
 
         tbb = get_software_root('TBB')
         if not tbb:
-            self.log.error("TBB module not loaded.")
+            raise EasyBuildError("TBB module not loaded.")
 
-        self.cfg.update('makeopts', "TBB_DIR=%s/tbb MPI_DIR='' MPI_INC='' " % tbb)
-        self.cfg.update('makeopts', 'MPI_CXX="%s" OPM_FLAG="%s"' % (os.getenv('MPICXX'), self.toolchain.get_flag('openmp')))
-        self.cfg.update('makeopts', 'MPI_LIB="" MY_CXX="%s" MPICH_IGNORE_CXX_SEEK=1' % os.getenv('CXX'))
+        self.cfg.update('buildopts', "TBB_DIR=%s/tbb MPI_DIR='' MPI_INC='' " % tbb)
+        self.cfg.update('buildopts', 'MPI_CXX="%s" OPM_FLAG="%s"' % (os.getenv('MPICXX'), self.toolchain.get_flag('openmp')))
+        self.cfg.update('buildopts', 'MPI_LIB="" MY_CXX="%s" MPICH_IGNORE_CXX_SEEK=1' % os.getenv('CXX'))
 
     def install_step(self):
         """Install by copying everything from 'bin' subdir in build dir to install dir"""

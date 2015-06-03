@@ -1,5 +1,5 @@
 ##
-# Copyright 2009-2013 Ghent University
+# Copyright 2009-2015 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -40,8 +40,10 @@ import easybuild.tools.toolchain as toolchain
 from easybuild.easyblocks.icc import get_icc_version
 from easybuild.framework.easyblock import EasyBlock
 from easybuild.framework.easyconfig import CUSTOM
-from easybuild.tools.filetools import run_cmd, extract_file
+from easybuild.tools.build_log import EasyBuildError
+from easybuild.tools.filetools import extract_file
 from easybuild.tools.modules import get_software_root, get_software_version
+from easybuild.tools.run import run_cmd
 
 
 class EB_Rosetta(EasyBlock):
@@ -67,9 +69,10 @@ class EB_Rosetta(EasyBlock):
                 if os.path.isfile(src_tarball):
                     self.srcdir = extract_file(src_tarball, prefix)
                 else:
-                    self.log.error("Neither source directory '%s', nor source tarball '%s' found." % (self.srcdir, src_tarball))
+                    raise EasyBuildError("Neither source directory '%s', nor source tarball '%s' found.",
+                                         self.srcdir, src_tarball)
         except OSError, err:
-            self.log.error("Getting Rosetta sources dir ready failed: %s" % err)
+            raise EasyBuildError("Getting Rosetta sources dir ready failed: %s", err)
 
     def configure_step(self):
         """
@@ -77,7 +80,7 @@ class EB_Rosetta(EasyBlock):
         """
         # construct build options
         defines = ['NDEBUG']
-        self.cfg.update('makeopts', "mode=release")
+        self.cfg.update('buildopts', "mode=release")
 
         self.cxx = os.getenv('CC_SEQ')
         if self.cxx is None:
@@ -88,11 +91,11 @@ class EB_Rosetta(EasyBlock):
         elif self.toolchain.comp_family() in [toolchain.INTELCOMP]:  #@UndefinedVariable
             cxx_ver = '.'.join(get_icc_version().split('.')[:2])
         else:
-            self.log.error("Don't know how to determine C++ compiler version.")
-        self.cfg.update('makeopts', "cxx=%s cxx_ver=%s" % (self.cxx, cxx_ver))
+            raise EasyBuildError("Don't know how to determine C++ compiler version.")
+        self.cfg.update('buildopts', "cxx=%s cxx_ver=%s" % (self.cxx, cxx_ver))
 
         if self.toolchain.options.get('usempi', None):
-            self.cfg.update('makeopts', 'extras=mpi')
+            self.cfg.update('buildopts', 'extras=mpi')
             defines.extend(['USEMPI', 'MPICH_IGNORE_CXX_SEEK'])
 
         # make sure important environment variables are passed down
@@ -150,7 +153,7 @@ class EB_Rosetta(EasyBlock):
             f.write(txt)
             f.close()
         except IOError, err:
-            self.log.error("Failed to write settings file %s: %s" % (us_fp, err))
+            raise EasyBuildError("Failed to write settings file %s: %s", us_fp, err)
 
         # make sure specified compiler version is accepted by patching it in
         os_fp = os.path.join(self.srcdir, "tools/build/options.settings")
@@ -166,11 +169,11 @@ class EB_Rosetta(EasyBlock):
         try:
             os.chdir(self.srcdir)
         except OSError, err:
-            self.log.error("Failed to change to %s: %s" % (self.srcdir, err))
+            raise EasyBuildError("Failed to change to %s: %s", self.srcdir, err)
         par = ''
         if self.cfg['parallel']:
             par = "-j %s" % self.cfg['parallel']
-        cmd = "python ./scons.py %s %s bin" % (self.cfg['makeopts'], par)
+        cmd = "python ./scons.py %s %s bin" % (self.cfg['buildopts'], par)
         run_cmd(cmd, log_all=True, simple=True)
 
     def install_step(self):
@@ -184,7 +187,7 @@ class EB_Rosetta(EasyBlock):
             os.makedirs(bindir)
             os.makedirs(libdir)
         except OSError, err:
-            self.log.error("Failed to created bin/lib dirs: %s, %s" % (bindir, libdir))
+            raise EasyBuildError("Failed to created bin/lib dirs: %s, %s", bindir, libdir)
 
         for build_subdir in ['src', 'external']:
             builddir = os.path.join('build', build_subdir)
@@ -195,7 +198,7 @@ class EB_Rosetta(EasyBlock):
                 while len(os.listdir(builddir)) == 1:
                     builddir = os.path.join(builddir, os.listdir(builddir)[0])
             except OSError, err:
-                self.log.error("Failed to walk build/src dir: %s" % err)
+                raise EasyBuildError("Failed to walk build/src dir: %s", err)
             # copy binaries/libraries to install dir
             lib_re = re.compile("^lib.*\.so$")
             try:
@@ -209,7 +212,7 @@ class EB_Rosetta(EasyBlock):
                             self.log.debug("Copying %s to %s" % (srcfile, bindir))
                             shutil.copy2(srcfile, os.path.join(bindir, fil))
             except OSError, err:
-                self.log.error("Copying executables from %s to bin/lib install dirs failed: %s" % (builddir, err))
+                raise EasyBuildError("Copying executables from %s to bin/lib install dirs failed: %s", builddir, err)
 
         os.chdir(self.cfg['start_dir'])
 
@@ -226,13 +229,15 @@ class EB_Rosetta(EasyBlock):
                 if os.path.exists(srcdir):
                     shutil.copytree(srcdir, os.path.join(self.installdir, os.path.basename(srcdir)))
                 elif not optional:
-                    self.log.error("Neither source directory '%s', nor source tarball '%s' found." % srcdir, src_tarball)
+                    raise EasyBuildError("Neither source directory '%s', nor source tarball '%s' found.",
+                                         srcdir, src_tarball)
             except OSError, err:
-                self.log.error("Getting Rosetta %s dir ready failed: %s" % (dirname_tmpl, err))
+                raise EasyBuildError("Getting Rosetta %s dir ready failed: %s", dirname_tmpl, err)
 
         # (extract and) copy database and biotools (if it's there)
         extract_and_copy('rosetta_database%s')
         extract_and_copy('BioTools%s', optional=True)
+        extract_and_copy('rosetta_tools%s', optional=True)
 
     def sanity_check_step(self):
         """Custom sanity check for Rosetta."""
